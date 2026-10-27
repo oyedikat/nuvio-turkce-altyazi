@@ -49,11 +49,18 @@ async function fromTurkceAltyazi(type, rawId, base) {
       (s) => Number(s.season) === Number(season) && Number(s.episode) === Number(episode)
     );
   }
-  return list.slice(0, MAX_TCA).map((s) => ({
-    id: `TCA-${s.release || "altyazi"}-${s.fps || ""}fps-${s.id}`,
-    url: `${base}/srt/${s.id}.srt?u=${encodeURIComponent(s.url || "")}`,
-    lang: "tur",
-  }));
+  return list.slice(0, MAX_TCA).map((s) => {
+    const label = `TCA · ${s.release || "altyazı"}${s.fps ? " · " + s.fps + " fps" : ""}`;
+    return {
+      id: `TCA-${s.id}`,
+      url: `${base}/srt/${s.id}.srt?u=${encodeURIComponent(s.url || "")}`,
+      lang: "tur",
+      // Bazı oynatıcılar başlık için bu alanlardan birini kullanır
+      title: label,
+      name: label,
+      label,
+    };
+  });
 }
 
 async function fromOpenSubtitles(type, rawId, rawExtra) {
@@ -63,7 +70,10 @@ async function fromOpenSubtitles(type, rawId, rawExtra) {
   const data = await res.json();
   return (data.subtitles || [])
     .filter((s) => /^(tur|tr)/i.test(s.lang || ""))
-    .map((s, i) => ({ id: `OS-${s.id ?? i}`, url: s.url, lang: "tur" }));
+    .map((s, i) => {
+      const label = `OS · #${s.id ?? i}`;
+      return { id: `OS-${s.id ?? i}`, url: s.url, lang: "tur", title: label, name: label, label };
+    });
 }
 
 const server = http.createServer(async (req, res) => {
