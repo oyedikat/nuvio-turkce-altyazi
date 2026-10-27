@@ -1,5 +1,5 @@
 // Türkçe Altyazı - Nuvio / Stremio eklentisi
-// Kaynaklar: turkcealtyazi.org (subTR kütüphanesi ile) + OpenSubtitles v3 (yedek)
+// Kaynak: turkcealtyazi.org (subTR kütüphanesi ile)
 // Gereksinim: Node.js 18+  |  Kurulum: npm install  |  Çalıştır: npm start
 
 import http from "node:http";
@@ -7,14 +7,13 @@ import { search, download } from "subtr";
 
 const PORT = process.env.PORT || 7000;
 const PUBLIC_URL = process.env.PUBLIC_URL; // örn. https://benim-eklenti.onrender.com
-const OS_SOURCE = "https://opensubtitles-v3.strem.io";
-const MAX_TCA = 10;
+const MAX_RESULTS = 15;
 
 const manifest = {
   id: "community.turkce.altyazi",
-  version: "2.0.0",
+  version: "2.1.0",
   name: "Türkçe Altyazı",
-  description: "turkcealtyazi.org ve OpenSubtitles'tan Türkçe altyazılar.",
+  description: "turkcealtyazi.org'dan Türkçe altyazılar.",
   resources: ["subtitles"],
   types: ["movie", "series"],
   idPrefixes: ["tt"],
@@ -44,12 +43,14 @@ function remember(key, ttl, fn) {
 async function fromTurkceAltyazi(type, rawId, base) {
   const [imdbId, season, episode] = decodeURIComponent(rawId).split(":");
   let list = await remember(`tca:${imdbId}`, 10 * 60e3, () => search({ imdbId }));
+  const total = list.length;
   if (type === "series") {
     list = list.filter(
       (s) => Number(s.season) === Number(season) && Number(s.episode) === Number(episode)
     );
   }
-  return list.slice(0, MAX_TCA).map((s) => {
+  console.log(`[TCA] ${imdbId} s${season ?? "-"}e${episode ?? "-"}: ${total} sonuç, ${list.length} eşleşti`);
+  return list.slice(0, MAX_RESULTS).map((s) => {
     const label = `TCA · ${s.release || "altyazı"}${s.fps ? " · " + s.fps + " fps" : ""}`;
     return {
       id: `TCA-${s.id}`,
@@ -61,19 +62,6 @@ async function fromTurkceAltyazi(type, rawId, base) {
       label,
     };
   });
-}
-
-async function fromOpenSubtitles(type, rawId, rawExtra) {
-  const url = `${OS_SOURCE}/subtitles/${type}/${rawId}${rawExtra ? "/" + rawExtra : ""}.json`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`OpenSubtitles: ${res.status}`);
-  const data = await res.json();
-  return (data.subtitles || [])
-    .filter((s) => /^(tur|tr)/i.test(s.lang || ""))
-    .map((s, i) => {
-      const label = `OS · #${s.id ?? i}`;
-      return { id: `OS-${s.id ?? i}`, url: s.url, lang: "tur", title: label, name: label, label };
-    });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -93,15 +81,32 @@ const server = http.createServer(async (req, res) => {
 
   const sub = path.match(/^\/subtitles\/(movie|series)\/([^/]+?)(?:\/([^/]+?))?\.json$/);
   if (sub) {
-    const [, type, rawId, rawExtra] = sub;
-    const results = await Promise.allSettled([
-      fromTurkceAltyazi(type, rawId, base),
-      fromOpenSubtitles(type, rawId, rawExtra),
-    ]);
-    results.forEach((r) => r.status === "rejected" && console.error(r.reason?.message));
-    const subtitles = results.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+    let subtitles = [];
+    try {
+      subtitles = await fromTurkceAltyazi(sub[1], sub[2], base);
+    } catch (err) {
+      console.error("[TCA] hata:", err.message);
+    }
     res.writeHead(200, json);
     return res.end(JSON.stringify({ subtitles }));
+  }
+
+  // Tanı sayfası: /debug/tt2861424  (siteye erişilebiliyor mu?)
+  const dbg = path.match(/^\/debug\/(tt\d+)$/);
+  if (dbg) {
+    const out = { imdbId: dbg[1], node: process.version };
+    try {
+      const list = await search({ imdbId: dbg[1] });
+      out.ok = true;
+      out.count = list.length;
+      out.ornek = list.slice(0, 3);
+    } catch (err) {
+      out.ok = false;
+      out.hata = err.message;
+      out.neden = err.cause?.message || err.cause?.code || null;
+    }
+    res.writeHead(200, json);
+    return res.end(JSON.stringify(out, null, 2));
   }
 
   // Altyazıyı indirip UTF-8 SRT olarak sun
