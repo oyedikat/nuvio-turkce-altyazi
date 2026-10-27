@@ -1,0 +1,12 @@
+{
+  "name": "nuvio-turkce-altyazi",
+  "version": "2.0.0",
+  "description": "Nuvio/Stremio için Türkçe altyazı eklentisi (turkcealtyazi.org + OpenSubtitles yedek)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "subtr": "github:szbk/subTR"
+  }
+}
